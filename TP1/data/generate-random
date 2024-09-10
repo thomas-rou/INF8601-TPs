@@ -1,0 +1,4 @@
+#!/bin/sh
+width=256
+height=256
+head --bytes="$(( 3 * width * height))" /dev/urandom | convert -depth 8 -size "${width}x${height}" RGB:- $1

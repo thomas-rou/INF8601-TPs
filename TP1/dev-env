@@ -1,0 +1,2 @@
+#!/bin/sh
+guix shell --pure gdb -D -m .guix.scm -- $@

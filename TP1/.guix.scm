@@ -1,0 +1,17 @@
+(specifications->manifest
+ (list
+  "bash"
+  "bc"
+  "clang-runtime"
+  "clang-toolchain"
+  "cmake"
+  "coreutils"
+  "diffutils"
+  "findutils"
+  "gzip"
+  "imagemagick"
+  "libpng"
+  "make"
+  "tar"
+  "tbb@2020"
+  "wget"))
