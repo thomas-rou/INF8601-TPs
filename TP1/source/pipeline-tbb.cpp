@@ -1,16 +1,21 @@
 #include <iostream>
+#include <thread>
 
-#define SERVER_RUN 0
+#define SERVER_RUN 1
 
 #if SERVER_RUN
 /* FOR RUNNING ON LAB MACHINE WHERE TBB LIB VERSION IS OLDER */
 #include <tbb/pipeline.h>
 #define FILTER_PARALLEL tbb::filter::parallel
 #define FILTER_SERIAL tbb::filter::serial_in_order
+#define FLOW_TYPE tbb::flow_control
+#define MAX_THREAD_COUNT 96
 #else
 #include <tbb/tbb.h>
 #define FILTER_PARALLEL filter_mode::parallel
 #define FILTER_SERIAL filter_mode::serial_in_order
+#define FLOW_TYPE detail::d1::flow_control
+#define MAX_THREAD_COUNT 8
 #endif
 
 extern "C" {
@@ -20,7 +25,6 @@ extern "C" {
 
 using namespace tbb;
 
-#define DEFAULT_THREAD_COUNT 16
 
 enum OP{
 	OP_SCALE,
@@ -35,7 +39,7 @@ public:
         this->image_dir = image_dir;
     }
 
-    image_t * operator()(detail::d1::flow_control &flow) const {
+    image_t * operator()(FLOW_TYPE &flow) const {
         image_t *img = image_dir_load_next(this->image_dir);
         if(img) return img;
         flow.stop();
@@ -90,16 +94,10 @@ private:
     image_dir_t* image_dir;
 };
 
-static int processor_count = -1;
 
 int pipeline_tbb(image_dir_t* image_dir) {
-    if(processor_count == -1){
-        processor_count = std::thread::hardware_concurrency();
-        std::cout << "PROCESSOR COUNT: " << processor_count << std::endl;
-    }
-    
     parallel_pipeline(
-        (processor_count == 0) ? DEFAULT_THREAD_COUNT : processor_count,
+        MAX_THREAD_COUNT,
         make_filter<void, image_t *>(FILTER_SERIAL, PipelineInput(image_dir))      &
         make_filter<image_t *, image_t *>(FILTER_PARALLEL, PipelineCompute(OP_SCALE))       &
         make_filter<image_t *, image_t *>(FILTER_PARALLEL, PipelineCompute(OP_DESATURATE))  &
@@ -107,6 +105,5 @@ int pipeline_tbb(image_dir_t* image_dir) {
         make_filter<image_t *, image_t *>(FILTER_PARALLEL, PipelineCompute(OP_EDGE_DETECT)) &
         make_filter<image_t *, void>(FILTER_PARALLEL, PipelineOutput(image_dir))            
     );
-
     return 0;
 }
