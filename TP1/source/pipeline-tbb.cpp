@@ -83,7 +83,6 @@ public:
     void operator()(image_t *input) const {
         if(!input) return;
 		image_dir_save(this->image_dir, input);
-        std::cout << "OUTPUT IMAGE: " << input->id << std::endl;
         image_destroy(input);
     }
 
