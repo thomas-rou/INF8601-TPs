@@ -1,5 +1,17 @@
 #include <iostream>
+
+#define SERVER_RUN 0
+
+#if SERVER_RUN
+/* FOR RUNNING ON LAB MACHINE WHERE TBB LIB VERSION IS OLDER */
+#include <tbb/pipeline.h>
+#define FILTER_PARALLEL tbb::filter::parallel
+#define FILTER_SERIAL tbb::filter::serial_in_order
+#else
 #include <tbb/tbb.h>
+#define FILTER_PARALLEL filter_mode::parallel
+#define FILTER_SERIAL filter_mode::serial_in_order
+#endif
 
 extern "C" {
 #include "filter.h"
@@ -89,12 +101,12 @@ int pipeline_tbb(image_dir_t* image_dir) {
     
     parallel_pipeline(
         (processor_count == 0) ? DEFAULT_THREAD_COUNT : processor_count,
-        make_filter<void, image_t *>(filter_mode::serial_in_order, PipelineInput(image_dir))      &
-        make_filter<image_t *, image_t *>(filter_mode::parallel, PipelineCompute(OP_SCALE))       &
-        make_filter<image_t *, image_t *>(filter_mode::parallel, PipelineCompute(OP_DESATURATE))  &
-        make_filter<image_t *, image_t *>(filter_mode::parallel, PipelineCompute(OP_HOR_FLIP))    &
-        make_filter<image_t *, image_t *>(filter_mode::parallel, PipelineCompute(OP_EDGE_DETECT)) &
-        make_filter<image_t *, void>(filter_mode::parallel, PipelineOutput(image_dir))            
+        make_filter<void, image_t *>(FILTER_SERIAL, PipelineInput(image_dir))      &
+        make_filter<image_t *, image_t *>(FILTER_PARALLEL, PipelineCompute(OP_SCALE))       &
+        make_filter<image_t *, image_t *>(FILTER_PARALLEL, PipelineCompute(OP_DESATURATE))  &
+        make_filter<image_t *, image_t *>(FILTER_PARALLEL, PipelineCompute(OP_HOR_FLIP))    &
+        make_filter<image_t *, image_t *>(FILTER_PARALLEL, PipelineCompute(OP_EDGE_DETECT)) &
+        make_filter<image_t *, void>(FILTER_PARALLEL, PipelineOutput(image_dir))            
     );
 
     return 0;
