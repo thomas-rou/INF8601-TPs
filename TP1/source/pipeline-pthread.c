@@ -62,7 +62,7 @@ void * img_op_callback(void *thread_args){
 			output = filter_horizontal_flip(input);
 			break;
 		case OP_EDGE_DETECT:
-			output = filter_edge_detect(input);
+			output = filter_sobel(input);
 			break;
 		}
 		image_destroy(input);
@@ -111,7 +111,7 @@ int pipeline_pthread(image_dir_t* image_dir) {
 
 	/* INIT COMPUTE THREADS */
 	for(unsigned int i = 0; i < NUM_PIPELINE_STEPS; i++){
-		args[i] = (struct img_op_args){.input = queues[i] , .output = queues[i + 1], .operation = i};
+		args[i] = (struct img_op_args){.input = queues[i] , .output = queues[i + 1], .operation = (enum OP)(OP_SCALE + i)};
 		for(unsigned int j = 0; j < NUM_PARALLEL_PIPELINES; j++)
 			pthread_create(&threads[j][i], NULL, img_op_callback, &args[i]);
 	}
