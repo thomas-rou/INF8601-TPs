@@ -1,0 +1,176 @@
+#!/bin/env python3
+"""
+@brief Handout script
+@
+"""
+
+# Imports
+
+import argparse
+import os
+import socket
+import sys
+
+# Parameters
+
+defaults= ('132.207.72.24', 8083)
+
+help_text = """
+Usage: handout COMMAND ARGS...
+
+COMMAND must be one of the sub-commands listed below:
+
+cancel TOKEN                       cancel computation of last submission
+fetch TOKEN                        download work for team with TOKEN
+help                               print this message
+list                               list informations about available works
+result TOKEN                       print results of team with TOKEN
+status TOKEN                       print status of current computation of team with TOKEN
+submit TOKEN ARCHIVE               submit ARCHIVE of team with TOKEN for evaluation
+teamup WORK ID1 [ID2]              create a new team for WORK
+"""
+
+class HelpPrinter(argparse._HelpAction):
+    def __call__(self,*args):
+        print(help_text)
+
+# Commands
+
+def get_server():
+    if 'HANDOUT_SERVER' in os.environ:
+        token = os.environ['HANDOUT_SERVER'].split(':')
+        print(f'Using server {token}')
+        return (token[0],int(token[1]))
+    else:
+        return defaults
+
+def download_file():
+    pass
+
+def connect():
+    sock = socket.socket()
+    try:
+        sock.connect(get_server())
+    except Exception as e:
+        print(f'Could not connect to server : {e}', file=sys.stderr)
+    return sock
+
+def get_response(socket):
+    res_full = bytearray()
+
+    res = socket.recv(1024)
+    while res != b'':
+        res_full += res
+        res = socket.recv(1024)
+    
+    pos = res_full.find(b'\n')
+
+    if pos == -1:
+        raise RuntimeError(f'Unexpected buffer received : {res_full}')
+    
+    return res_full[:pos].decode(), res_full[pos+1:]
+
+def handle_response(header, data, input_file=None):
+    tokens = header.split()
+    cmd = tokens[0]
+
+    if cmd == 'print':
+        print(data.decode())
+    elif cmd == 'recvfile':
+        filename = tokens[1]
+        size = int(tokens[2])
+
+        with open(filename, 'wb') as f:
+            f.write(data)
+
+    elif cmd == 'sendfile':
+        if input_file is None:
+            raise RuntimeError('No input file specified')
+    
+    else:
+        raise RuntimeError(f'Unexpected response from server : {cmd}')
+
+def run_command(command, args):
+    arguments = [b for _, b in vars(args).items() if b is not None][:-1] # skip 'func'
+    request = f'{command} {" ".join(str(x) for x in arguments)}'.strip() + '\n'
+    
+    print(request)
+
+    conn = connect()
+    
+    conn.send(request.encode())
+    handle_response(*get_response(conn))
+    conn.close()
+
+def submit_work(args):
+    token = args.TOKEN
+    filename = args.ARCHIVE
+
+    stat = os.stat(filename)
+
+    request = f'submit {token} {stat.st_size}\n'
+    print(request)
+
+    with open(filename,'rb') as f:
+        file_buffer = f.read()
+
+    conn = connect()
+    conn.send(request.encode())
+    conn.send(file_buffer)
+    handle_response(*get_response(conn))
+
+    conn.close()
+
+# Arguments
+
+parser = argparse.ArgumentParser(
+    prog='handout',
+    add_help=False
+)
+
+parser.add_argument('-h', '--help', action=HelpPrinter)
+
+subparsers = parser.add_subparsers()
+
+cancel = subparsers.add_parser('cancel')
+cancel.add_argument('TOKEN')
+cancel.set_defaults(func=lambda x: run_command('cancel', x))
+
+submit = subparsers.add_parser('submit')
+submit.add_argument('TOKEN')
+submit.add_argument('ARCHIVE')
+submit.set_defaults(func=submit_work)
+
+fetch = subparsers.add_parser('fetch')
+fetch.add_argument('TOKEN')
+fetch.set_defaults(func=lambda x: run_command('fetch', x))
+
+lister = subparsers.add_parser('list')
+lister.set_defaults(func=lambda x: run_command('list', x))
+
+result = subparsers.add_parser('result')
+result.add_argument('TOKEN')
+result.set_defaults(func=lambda x: run_command('result', x))
+
+status = subparsers.add_parser('status')
+status.add_argument('TOKEN')
+status.set_defaults(func=lambda x: run_command('status', x))
+
+teamup = subparsers.add_parser('teamup')
+teamup.add_argument('WORK')
+teamup.add_argument('ID1')
+teamup.add_argument('ID2', nargs='?',default=None)
+teamup.set_defaults(func=lambda x: run_command('teamup', x))
+
+helper = subparsers.add_parser('help')
+helper.set_defaults(func=HelpPrinter(''))
+
+if __name__ == "__main__":
+    try:
+        args = parser.parse_args()
+    except:
+        HelpPrinter('')()
+        exit(-1)
+
+    if 'func' in vars(args):
+        args.func(args)
