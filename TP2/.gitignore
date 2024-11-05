@@ -1,5 +1,2 @@
 README.pdf
 build/
-source/sinoscope-openmp.c
-source/sinoscope-opencl.c
-source/kernel/sinoscope.cl
