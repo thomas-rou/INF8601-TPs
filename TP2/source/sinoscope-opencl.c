@@ -99,28 +99,29 @@ typedef struct sinoscope_float{
 static sinoscope_float_t third_param;
 
 int sinoscope_opencl_init(sinoscope_opencl_t* opencl, cl_device_id opencl_device_id, unsigned int width, unsigned int height) {
-
 	cl_ulong mem_size;
+	cl_int errcode = 0;
+
 	clGetDeviceInfo(opencl_device_id, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(cl_ulong), &mem_size, NULL);
 	LOG_ERROR("GLOBAL MEMORY SIZE: %lu MB", mem_size / (1024 * 1024));
 
 	opencl->device_id=opencl_device_id;
-    cl_int errcode_ret = 0;
-    opencl->context = clCreateContext(NULL, 1, &opencl->device_id, NULL, NULL, &errcode_ret);
-    if (errcode_ret != CL_SUCCESS) {
+
+    opencl->context = clCreateContext(NULL, 1, &opencl->device_id, NULL, NULL, &errcode);
+    if (errcode != CL_SUCCESS) {
         LOG_ERROR("Failed to create OpenCL context");
         return -1;
     }
 
-	opencl->queue = clCreateCommandQueue (opencl->context, opencl->device_id, 0, &errcode_ret);
-	if (errcode_ret != CL_SUCCESS) {
+	opencl->queue = clCreateCommandQueue (opencl->context, opencl->device_id, 0, &errcode);
+	if (errcode != CL_SUCCESS) {
         LOG_ERROR("Failed to create OpenCL queue");
         return -1;
     }
 
 	size_t size = (width * height) * 3 ;
-	opencl->buffer = clCreateBuffer (opencl->context, CL_MEM_WRITE_ONLY, size, NULL, &errcode_ret);
-	if (errcode_ret != CL_SUCCESS) {
+	opencl->buffer = clCreateBuffer (opencl->context, CL_MEM_WRITE_ONLY, size, NULL, &errcode);
+	if (errcode != CL_SUCCESS) {
         LOG_ERROR("Failed to create OpenCL buffer");
         return -1;
     }
@@ -132,9 +133,9 @@ int sinoscope_opencl_init(sinoscope_opencl_t* opencl, cl_device_id opencl_device
 		return -1;
 	}
 
-	cl_program program = clCreateProgramWithSource(opencl->context, 1, (const char **)&shader_source, &shader_len, &errcode_ret);
+	cl_program program = clCreateProgramWithSource(opencl->context, 1, (const char **)&shader_source, &shader_len, &errcode);
 	free(shader_source);
-	if (errcode_ret != CL_SUCCESS) {
+	if (errcode != CL_SUCCESS) {
         LOG_ERROR("Failed to create OpenCL program");
         return -1;
     }
@@ -152,8 +153,8 @@ int sinoscope_opencl_init(sinoscope_opencl_t* opencl, cl_device_id opencl_device
 	}
 
 	const char *kernel_name = "sinoscope_kernel";
-	opencl->kernel = clCreateKernel(program, kernel_name, &errcode_ret);
-	if (errcode_ret != CL_SUCCESS) {
+	opencl->kernel = clCreateKernel(program, kernel_name, &errcode);
+	if (errcode != CL_SUCCESS) {
         LOG_ERROR("Failed to create OpenCL buffer");
         return -1;
     }
@@ -161,23 +162,23 @@ int sinoscope_opencl_init(sinoscope_opencl_t* opencl, cl_device_id opencl_device
 	// set kernel args
 	// first the buffer? why set it here when wze set it also in exec
 	// OpenCL, a buffer is a memory object that stores data that can be read or written by kernels. Buffers are used to transfer data between the host (CPU) and the device (GPU or other OpenCL-capable devices).
-	errcode_ret = clSetKernelArg(opencl->kernel, 0, sizeof(cl_mem), &opencl->buffer);
-	if (errcode_ret != CL_SUCCESS){
-		LOG_ERROR("FAILED TO ADD ARG 0 TO KERNEL: %s", opencl_errstr(errcode_ret));
+	errcode = clSetKernelArg(opencl->kernel, 0, sizeof(cl_mem), &opencl->buffer);
+	if (errcode != CL_SUCCESS){
+		LOG_ERROR("FAILED TO ADD ARG 0 TO KERNEL: %s", opencl_errstr(errcode));
 		return -1;
 	}
 
 	// set kernel arg of sinoscope split between int and float
 	// why set it here when we set it also in exec
-	errcode_ret = clSetKernelArg(opencl->kernel, 1, sizeof(sinoscope_int_t), &second_param);
-	if (errcode_ret != CL_SUCCESS){
-		LOG_ERROR("FAILED TO ADD ARG 1 TO KERNEL: %s", opencl_errstr(errcode_ret));
+	errcode = clSetKernelArg(opencl->kernel, 1, sizeof(sinoscope_int_t), &second_param);
+	if (errcode != CL_SUCCESS){
+		LOG_ERROR("FAILED TO ADD ARG 1 TO KERNEL: %s", opencl_errstr(errcode));
 		return -1;
 	}
 
-	errcode_ret = clSetKernelArg(opencl->kernel, 2, sizeof(sinoscope_float_t), &third_param);
-	if (errcode_ret != CL_SUCCESS){
-		LOG_ERROR("FAILED TO ADD ARG 2 TO KERNEL: %s", opencl_errstr(errcode_ret));
+	errcode = clSetKernelArg(opencl->kernel, 2, sizeof(sinoscope_float_t), &third_param);
+	if (errcode != CL_SUCCESS){
+		LOG_ERROR("FAILED TO ADD ARG 2 TO KERNEL: %s", opencl_errstr(errcode));
 		return -1;
 	}
 
