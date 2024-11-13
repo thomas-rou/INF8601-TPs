@@ -1,0 +1,25 @@
+#!/bin/sh
+
+set -e
+
+heatsim="$1"
+
+if mpirun --oversubscribe --help >/dev/null 2>&1; then
+    mpi="mpirun --oversubscribe"
+else
+    mpi="mpirun"
+fi
+
+echo "Running check N=1: 1x1"
+$mpi -n 1 "$heatsim" --dim-x 1 --dim-y 1 --input ./images/earth-medium.png --iterations 10 --output ./images/check1.png
+
+echo "Running check N=10: 2x5"
+$mpi -n 10 "$heatsim" --dim-x 2 --dim-y 5 --input ./images/earth-medium.png --iterations 10 --output ./images/check10.png
+
+echo "Running check N=16: 4x4"
+$mpi -n 16 "$heatsim" --dim-x 4 --dim-y 4 --input ./images/earth-medium.png --iterations 10 --output ./images/check16.png
+
+echo "Running check N=32: 8x4"
+$mpi -n 32 "$heatsim" --dim-x 8 --dim-y 4 --input ./images/earth-medium.png --iterations 10 --output ./images/check32.png
+
+sha256sum --check ./images/check1.checksum ./images/check10.checksum ./images/check16.checksum ./images/check32.checksum

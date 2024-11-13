@@ -1,0 +1,13 @@
+(specifications->manifest
+ (list
+  "bash"
+  "bc"
+  "cmake"
+  "coreutils"
+  "findutils"
+  "gcc-toolchain"
+  "libpng"
+  "make"
+  "tbb"
+  "wget"
+  "zip"))
