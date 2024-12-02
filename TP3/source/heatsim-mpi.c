@@ -190,6 +190,8 @@ fail_exit:
     return NULL;
 }
 
+#define HEATSIM_EXCHANGE_BORDERS_ASYNC 0
+#if HEATSIM_EXCHANGE_BORDERS_ASYNC
 int heatsim_exchange_borders_async(heatsim_t* heatsim, grid_t* grid) {
     assert(grid->padding == 1);
 
@@ -340,6 +342,7 @@ int heatsim_exchange_borders_async(heatsim_t* heatsim, grid_t* grid) {
 fail_exit:
     return -1;
 }
+#endif //HEATSIM_EXCHANGE_BORDERS_ASYNC
 
 static int handle_east_west_exchange(heatsim_t* heatsim, grid_t* grid){
     MPI_Datatype datatype;
