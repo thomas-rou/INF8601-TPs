@@ -190,7 +190,7 @@ fail_exit:
     return NULL;
 }
 
-int heatsim_exchange_borders(heatsim_t* heatsim, grid_t* grid) {
+int heatsim_exchange_borders_async(heatsim_t* heatsim, grid_t* grid) {
     assert(grid->padding == 1);
 
     /*
@@ -334,6 +334,281 @@ int heatsim_exchange_borders(heatsim_t* heatsim, grid_t* grid) {
     }
 
     MPI_Type_free(&datatype);
+
+    return 0;
+
+fail_exit:
+    return -1;
+}
+
+static int handle_east_west_exchange(heatsim_t* heatsim, grid_t* grid){
+    MPI_Datatype datatype;
+    MPI_Type_vector(grid->height, 1, grid->width_padded, MPI_DOUBLE, &datatype);
+    MPI_Type_commit(&datatype);
+
+    int status;
+    MPI_Status req_status;
+
+    if(heatsim->rank % 2 == 0){
+
+        /* SEND EAST BORDER */
+        if(heatsim->rank != heatsim->rank_east_peer){
+            status = MPI_Send(grid_get_cell(grid, grid->width - 1, 0), 1, 
+                datatype, heatsim->rank_east_peer, 0, heatsim->communicator);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT SEND EAST BORDER FOR PAIR NODE", status);
+                goto fail_exit;
+            }
+        }else{
+            for(int i = 0; i < grid->height; i++)
+                *grid_get_cell_padded(grid, 0, i + 1) = *grid_get_cell(grid, grid->width - 1, i);
+        }
+
+        /* RECEIVE WEST BORDER */
+        if(heatsim->rank != heatsim->rank_west_peer){
+            status = MPI_Recv(grid_get_cell_padded(grid, 0, 1), 1, datatype, 
+                heatsim->rank_west_peer, 0, heatsim->communicator, &req_status);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT RECEIVE WEST BORDER FOR PAIR NODE", status);
+                goto fail_exit;
+            }
+        }
+
+        /* SEND WEST BORDER */
+        if(heatsim->rank != heatsim->rank_west_peer){
+            status = MPI_Send(grid_get_cell(grid, 0, 0), 1, datatype, heatsim->rank_west_peer, 1, heatsim->communicator);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT SEND WEST BORDER FOR PAIR NODE", status);
+                goto fail_exit;
+            }
+        }else{
+            for(int i = 0; i < grid->height; i++)
+                *grid_get_cell_padded(grid, grid->width_padded - 1, i + 1) = *grid_get_cell(grid, 0, i);
+        }
+
+        /* RECEIVE EAST BORDER */
+        if(heatsim->rank != heatsim->rank_east_peer){
+            status = MPI_Recv(grid_get_cell_padded(grid, grid->width_padded - 1, 1), 1, 
+                datatype, heatsim->rank_east_peer, 1, heatsim->communicator, &req_status);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT RECEIVE EAST BORDER FOR PAIR NODE", status);
+                goto fail_exit;
+            }
+        }
+
+    }else{
+
+        /* RECEIVE WEST BORDER */
+        if(heatsim->rank != heatsim->rank_west_peer){
+            status = MPI_Recv(grid_get_cell_padded(grid, 0, 1), 1, datatype, 
+                heatsim->rank_west_peer, 0, heatsim->communicator, &req_status);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT RECEIVE WEST BORDER FOR PAIR NODE", status);
+                goto fail_exit;
+            }
+        }
+
+        /* SEND EAST BORDER */
+        if(heatsim->rank != heatsim->rank_east_peer){
+            status = MPI_Send(grid_get_cell(grid, grid->width - 1, 0), 1, 
+                datatype, heatsim->rank_east_peer, 0, heatsim->communicator);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT SEND EAST BORDER FOR PAIR NODE", status);
+                goto fail_exit;
+            }
+        }else{
+            for(int i = 0; i < grid->height; i++)
+                *grid_get_cell_padded(grid, 0, i + 1) = *grid_get_cell(grid, grid->width - 1, i);
+        }
+
+        /* RECEIVE EAST BORDER */
+        if(heatsim->rank != heatsim->rank_east_peer){
+            status = MPI_Recv(grid_get_cell_padded(grid, grid->width_padded - 1, 1), 1, 
+                datatype, heatsim->rank_east_peer, 1, heatsim->communicator, &req_status);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT RECEIVE EAST BORDER FOR PAIR NODE", status);
+                goto fail_exit;
+            }
+        }
+
+        /* SEND WEST BORDER */
+        if(heatsim->rank != heatsim->rank_west_peer){
+            status = MPI_Send(grid_get_cell(grid, 0, 0), 1, datatype, heatsim->rank_west_peer, 1, heatsim->communicator);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT SEND WEST BORDER FOR PAIR NODE", status);
+                goto fail_exit;
+            }
+        }else{
+            for(int i = 0; i < grid->height; i++)
+                *grid_get_cell_padded(grid, grid->width_padded - 1, i + 1) = *grid_get_cell(grid, 0, i);
+        }
+
+    }
+    
+    MPI_Type_free(&datatype);
+
+    return 0;
+
+fail_exit:
+    return -1;
+}
+
+static int handle_north_south_exchange(heatsim_t *heatsim, grid_t *grid){
+    int status;
+    MPI_Status req_status;
+
+    if(heatsim->coordinates[1] % 2 == 0){
+
+        /* SEND NORTH BORDER */
+        if(heatsim->rank != heatsim->rank_north_peer){
+            status = MPI_Send(grid_get_cell(grid, 0, 0), grid->width, 
+                MPI_DOUBLE, heatsim->rank_north_peer, 0, heatsim->communicator);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT SEND NORTH BORDER PAIR NODE", status);
+                goto fail_exit;
+            }
+        }else{
+            memcpy(grid_get_cell_padded(grid, 1, grid->height_padded - 1), 
+                grid_get_cell(grid, 0, 0), grid->width * sizeof(double));
+        }
+
+        /* RECEIVE SOUTH BORDER */
+        if(heatsim->rank != heatsim->rank_south_peer){
+            status = MPI_Recv(grid_get_cell_padded(grid, 1, grid->height_padded - 1), 
+                grid->width, MPI_DOUBLE, heatsim->rank_south_peer, 0, heatsim->communicator, &req_status);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT RECEIVE SOUTH BORDER PAIR NODE", status);
+                goto fail_exit;
+            }
+        }
+
+        /* SEND SOUTH BORDER */
+        if(heatsim->rank != heatsim->rank_south_peer){
+            status = MPI_Send(grid_get_cell(grid, 0, grid->height - 1), grid->width, 
+                MPI_DOUBLE, heatsim->rank_south_peer, 1, heatsim->communicator);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT SEND SOUTH BORDER PAIR NODE", status);
+                goto fail_exit;
+            }
+        }else{
+            memcpy(grid_get_cell_padded(grid, 1, 0), 
+                grid_get_cell(grid, 0, grid->height - 1), grid->width * sizeof(double));
+        }
+
+        /* RECEIVE NORTH BORDER */
+        if(heatsim->rank != heatsim->rank_north_peer){
+            status = MPI_Recv(grid_get_cell_padded(grid, 1, 0), grid->width, 
+                MPI_DOUBLE, heatsim->rank_north_peer, 1, heatsim->communicator, &req_status);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT RECEIVE NORTH BORDER PAIR NODE", status);
+                goto fail_exit;
+            }
+        }
+
+    }else{
+
+        /* RECEIVE SOUTH BORDER */
+        if(heatsim->rank != heatsim->rank_south_peer){
+            status = MPI_Recv(grid_get_cell_padded(grid, 1, grid->height_padded - 1), 
+                grid->width, MPI_DOUBLE, heatsim->rank_south_peer, 0, heatsim->communicator, &req_status);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT RECEIVE SOUTH BORDER PAIR NODE", status);
+                goto fail_exit;
+            }
+        }
+
+        /* SEND NORTH BORDER */
+        if(heatsim->rank != heatsim->rank_north_peer){
+            status = MPI_Send(grid_get_cell(grid, 0, 0), grid->width, 
+                MPI_DOUBLE, heatsim->rank_north_peer, 0, heatsim->communicator);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT SEND NORTH BORDER PAIR NODE", status);
+                goto fail_exit;
+            }
+        }else{
+            memcpy(grid_get_cell_padded(grid, 1, grid->height_padded - 1), 
+                grid_get_cell(grid, 0, 0), grid->width * sizeof(double));
+        }
+
+        /* RECEIVE NORTH BORDER */
+        if(heatsim->rank != heatsim->rank_north_peer){
+            status = MPI_Recv(grid_get_cell_padded(grid, 1, 0), grid->width, 
+                MPI_DOUBLE, heatsim->rank_north_peer, 1, heatsim->communicator, &req_status);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT RECEIVE NORTH BORDER PAIR NODE", status);
+                goto fail_exit;
+            }
+        }
+
+        /* SEND SOUTH BORDER */
+        if(heatsim->rank != heatsim->rank_south_peer){
+            status = MPI_Send(grid_get_cell(grid, 0, grid->height - 1), grid->width, 
+                MPI_DOUBLE, heatsim->rank_south_peer, 1, heatsim->communicator);
+            if(status != MPI_SUCCESS){
+                LOG_ERROR_MPI("COULD NOT SEND SOUTH BORDER PAIR NODE", status);
+                goto fail_exit;
+            }
+        }else{
+            memcpy(grid_get_cell_padded(grid, 1, 0), 
+                grid_get_cell(grid, 0, grid->height - 1), grid->width * sizeof(double));
+        }
+
+    }
+
+    return 0;
+
+fail_exit:
+    return -1;
+}
+
+int heatsim_exchange_borders(heatsim_t* heatsim, grid_t* grid) {
+    assert(grid->padding == 1);
+
+    /*
+     * TODO: Échange les bordures de `grid`, excluant le rembourrage, dans le
+     *       rembourrage du voisin de ce rang. Par exemple, soit la `grid`
+     *       4x4 suivante,
+     *
+     *                            +-------------+
+     *                            | x x x x x x |
+     *                            | x A B C D x |
+     *                            | x E F G H x |
+     *                            | x I J K L x |
+     *                            | x M N O P x |
+     *                            | x x x x x x |
+     *                            +-------------+
+     *
+     *       où `x` est le rembourrage (padding = 1). Ce rang devrait envoyer
+     *
+     *        - la bordure [A B C D] au rang nord,
+     *        - la bordure [M N O P] au rang sud,
+     *        - la bordure [A E I M] au rang ouest et
+     *        - la bordure [D H L P] au rang est.
+     *
+     *       Ce rang devrait aussi recevoir dans son rembourrage
+     *
+     *        - la bordure [A B C D] du rang sud,
+     *        - la bordure [M N O P] du rang nord,
+     *        - la bordure [A E I M] du rang est et
+     *        - la bordure [D H L P] du rang ouest.
+     *
+     *       Après l'échange, le `grid` devrait avoir ces données dans son
+     *       rembourrage provenant des voisins:
+     *
+     *                            +-------------+
+     *                            | x m n o p x |
+     *                            | d A B C D a |
+     *                            | h E F G H e |
+     *                            | l I J K L i |
+     *                            | p M N O P m |
+     *                            | x a b c d x |
+     *                            +-------------+
+     *
+     *       Utilisez `grid_get_cell` pour obtenir un pointeur vers une cellule.
+     */
+
+    if(handle_east_west_exchange(heatsim, grid) != 0) goto fail_exit;
+    if(handle_north_south_exchange(heatsim, grid) != 0) goto fail_exit;
 
     return 0;
 
