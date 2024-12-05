@@ -109,7 +109,7 @@ int heatsim_send_grids(heatsim_t* heatsim, cart2d_t* cart) {
         }
 
         // Send the grid data with the custom type
-        if(MPI_Isend(grid->data, 1, datatype, destination_rank, 0, heatsim->communicator, &request) != MPI_SUCCESS) {
+        if(MPI_Isend(grid->data, 1, datatype, destination_rank, 1, heatsim->communicator, &request) != MPI_SUCCESS) {
             LOG_ERROR("MPI_Isend failed to send grid data to rank %d", destination_rank);
             goto fail_exit;
         }
@@ -142,6 +142,58 @@ grid_t* heatsim_receive_grid(heatsim_t* heatsim) {
      *
      *       Utilisez `grid_create` pour allouer le `grid` à retourner.
      */
+    unsigned int buffer[3];
+    MPI_Request request;
+    MPI_Status status;
+    // receive the width, height and padding of the grid
+    if(MPI_Irecv(buffer, 3, MPI_UNSIGNED, 0, 0, heatsim->communicator, &request) != MPI_SUCCESS) {
+        LOG_ERROR("MPI_Irecv failed to receive grid info from rank 0");
+        goto fail_exit;
+    }
+
+    if(MPI_Wait(&request, &status) != MPI_SUCCESS) {
+        LOG_ERROR("MPI_Wait failed to wait for grid info from rank 0");
+        goto fail_exit;
+    }
+
+    grid_t *grid = grid_create(buffer[0], buffer[1], buffer[2]);
+
+    // Create a receivable datatype for the grid
+    MPI_Datatype ElementType[] = {MPI_DOUBLE};
+    int elementBlockSize[] = {grid->width_padded * grid->height_padded};
+    MPI_Aint elementDisplacement[] = {0};
+    MPI_Datatype datatype;
+
+    // Create the datatype
+    if(MPI_Type_create_struct(1, elementBlockSize, elementDisplacement, ElementType, &datatype) != MPI_SUCCESS) {
+        LOG_ERROR("MPI_Type_create_struct failed to create datatype for grid");
+        goto fail_exit;
+    }
+
+    // Commit the datatype to allow it to be used in MPI_Isend
+    if(MPI_Type_commit(&datatype) != MPI_SUCCESS) {
+        LOG_ERROR("MPI_Type_commit failed to commit datatype for grid");
+        goto fail_exit;
+    }
+
+    // receive the grid data with the custom type
+    if(MPI_Irecv(grid->data, 1, datatype, 0, 1, heatsim->communicator, &request) != MPI_SUCCESS) {
+        LOG_ERROR("MPI_Irecv failed to receive grid info from rank 0");
+        goto fail_exit;
+    }
+
+    if(MPI_Wait(&request, &status) != MPI_SUCCESS) {
+        LOG_ERROR("MPI_Wait failed to wait for grid info from rank 0");
+        goto fail_exit;
+    }
+
+    // Free the datatype
+    if(MPI_Type_free(&datatype) != MPI_SUCCESS) {
+        LOG_ERROR("MPI_Type_free failed to free datatype for grid");
+        goto fail_exit;
+    }
+
+    return grid;
 
 fail_exit:
     return NULL;
