@@ -10,7 +10,6 @@ int heatsim_init(heatsim_t* heatsim, unsigned int dim_x, unsigned int dim_y) {
      *       Le communicateur doit être périodique. Le communicateur
      *       cartésien est périodique en X et Y.
      */
-    MPI_Status status;
     // Create a 2D cartesian communicator
     if (MPI_Cart_create(MPI_COMM_WORLD, 2, (int[]){dim_x, dim_y}, (int[]){1, 1}, 0, &heatsim->communicator) != MPI_SUCCESS) {
         LOG_ERROR("MPI_Cart_create failed");
@@ -245,6 +244,97 @@ int heatsim_exchange_borders(heatsim_t* heatsim, grid_t* grid) {
      *       Utilisez `grid_get_cell` pour obtenir un pointeur vers une cellule.
      */
 
+    MPI_Request requests[4] = {MPI_REQUEST_NULL, MPI_REQUEST_NULL, MPI_REQUEST_NULL, MPI_REQUEST_NULL};
+    int send_status;
+    // handle sending the north border
+        // check if the rank isn't it's own north peer
+        // send the north border
+        // if it's it's own north peer, copy the north border to it's own padding
+    if(heatsim->rank != heatsim->rank_north_peer){
+        send_status = MPI_Isend(grid_get_cell(grid, 0, 0), grid->width, MPI_DOUBLE, heatsim->rank_north_peer, 0, heatsim->communicator, &requests[0]);
+        if (send_status != MPI_SUCCESS){
+            LOG_ERROR("Could not send north border from %d to %d", heatsim->rank, heatsim->rank_north_peer);
+            goto fail_exit;
+        }
+    } else {
+        memcpy(grid_get_cell_padded(grid, 0, grid->height_padded - 1), grid_get_cell(grid, 0, 0), grid->width * sizeof(double));
+    }
+
+    // handle sending the south border
+    if(heatsim->rank != heatsim->rank_south_peer){
+        send_status = MPI_Isend(grid_get_cell(grid, 0, grid->height - 1), grid->width, MPI_DOUBLE, heatsim->rank_south_peer, 1, heatsim->communicator, &requests[1]);
+        if (send_status != MPI_SUCCESS){
+            LOG_ERROR("Could not send south border from %d to %d", heatsim->rank, heatsim->rank_south_peer);
+            goto fail_exit;
+        }
+    } else {
+        memcpy(grid_get_cell_padded(grid, 0, grid->height - 1), grid_get_cell(grid, 0, 0), grid->width * sizeof(double));
+    }
+
+    MPI_Datatype datatype;
+    MPI_Type_vector(grid->height, 1, grid->width_padded, MPI_DOUBLE, &datatype);
+    MPI_Type_commit(&datatype);
+
+    // handle sending the west border
+    if (heatsim->rank != heatsim->rank_west_peer){
+        send_status = MPI_Isend(grid_get_cell(grid, 0, 0), 1, datatype, heatsim->rank_west_peer, 2, heatsim->communicator, &requests[2]);
+        if (send_status != MPI_SUCCESS){
+            LOG_ERROR("Could not send west border from %d to %d", heatsim->rank, heatsim->rank_west_peer);
+            goto fail_exit;
+        }
+    } else {
+        for (int i = 0; i < grid->height; i++){
+            *grid_get_cell_padded(grid, grid->width_padded - 1, i + 1) = *grid_get_cell(grid,0, i);
+        }
+    }
+
+    // handle sending the east border
+    if (heatsim->rank != heatsim->rank_east_peer){
+        send_status = MPI_Isend(grid_get_cell(grid, grid->width - 1, 0), 1, datatype, heatsim->rank_east_peer, 3, heatsim->communicator, &requests[3]);
+        if (send_status != MPI_SUCCESS){
+            LOG_ERROR("Could not send west border from %d to %d", heatsim->rank, heatsim->rank_east_peer);
+            goto fail_exit;
+        }
+    } else {
+        for (int i = 0; i < grid->height; i++){
+            *grid_get_cell_padded(grid, 0, i + 1) = *grid_get_cell(grid, grid->width - 1, i);
+        }
+    }
+
+    MPI_Request request;
+    MPI_Status status;
+
+    // handle receiving the north border
+     if(heatsim->rank != heatsim->rank_north_peer){
+        MPI_Irecv(grid_get_cell_padded(grid, 1, 0), grid->width, MPI_DOUBLE, heatsim->rank_north_peer, 0, heatsim->communicator, &request);
+        MPI_Wait(&request, &status);
+    }
+
+    // handle receiving the south border
+    if(heatsim->rank != heatsim->rank_south_peer){
+        MPI_Irecv(grid_get_cell_padded(grid, 1, grid->height_padded - 1), grid->width, MPI_DOUBLE, heatsim->rank_south_peer, 1, heatsim->communicator, &request);
+        MPI_Wait(&request, &status);
+    }
+
+    // handle receiving the west border
+    if(heatsim->rank != heatsim->rank_west_peer){
+        MPI_Irecv(grid_get_cell_padded(grid, 0, 1), 1, datatype, heatsim->rank_west_peer, 2, heatsim->communicator, &request);
+        MPI_Wait(&request, &status);
+    }
+
+    // handle receiving the east border
+    if(heatsim->rank != heatsim->rank_east_peer){
+        MPI_Irecv(grid_get_cell_padded(grid, grid->width_padded - 1, 1), 1, datatype, heatsim->rank_west_peer, 3, heatsim->communicator, &request);
+        MPI_Wait(&request, &status);
+    }
+
+    if(MPI_Type_free(&datatype) != MPI_SUCCESS) {
+        LOG_ERROR("MPI_Type_free failed to free datatype for grid");
+        goto fail_exit;
+    }
+
+    return 0;
+
 fail_exit:
     return -1;
 }
@@ -256,6 +346,20 @@ int heatsim_send_result(heatsim_t* heatsim, grid_t* grid) {
      * TODO: Envoyer les données (`data`) du `grid` résultant au rang 0. Le
      *       `grid` n'a aucun rembourage (padding = 0);
      */
+    MPI_Request request;
+    MPI_Status status;
+
+    if(MPI_Isend(grid->data, grid->height * grid->width, MPI_DOUBLE, 0, 0, heatsim->communicator, &request) != MPI_SUCCESS){
+        LOG_ERROR("could not send result from rank %d", heatsim->rank);
+        goto fail_exit;
+    }
+
+    if (MPI_Wait(&request, &status) != MPI_SUCCESS){
+        LOG_ERROR("could not wait for send from rank %d", heatsim->rank);
+        goto fail_exit;
+    }
+
+    return 0;
 
 fail_exit:
     return -1;
@@ -269,6 +373,30 @@ int heatsim_receive_results(heatsim_t* heatsim, cart2d_t* cart) {
      *       Utilisez `cart2d_get_grid` pour obtenir la `grid` à une coordonnée
      *       qui va recevoir le contenue (`data`) d'un autre noeud.
      */
+
+    for(unsigned int processRank = 1; processRank < heatsim->rank_count; processRank++){
+
+        if(MPI_Cart_coords(heatsim->communicator, processRank, 2, heatsim->coordinates) != MPI_SUCCESS){
+            LOG_ERROR("Could not get cartesian coordinate for rank: %d", processRank);
+            goto fail_exit;
+        }
+
+        grid_t *grid = cart2d_get_grid(cart, heatsim->coordinates[0], heatsim->coordinates[1]);
+        MPI_Request request;
+        MPI_Status status;
+
+        if(MPI_Irecv(grid_get_cell(grid, 0, 0), grid->width * grid->height, MPI_DOUBLE, processRank, 0, heatsim->communicator, &request) != MPI_SUCCESS){
+            LOG_ERROR("could not receive data grid");
+            goto fail_exit;
+        }
+
+        if(MPI_Wait(&request, &status) != MPI_SUCCESS){
+            LOG_ERROR("Could not wait for data grid");
+            goto fail_exit;
+        }
+    }
+
+    return 0;
 
 fail_exit:
     return -1;
